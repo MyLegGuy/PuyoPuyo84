@@ -11,7 +11,7 @@
 #define AmitieSmall_size 30482
 extern uint8_t AmitieSmall_data[30482];
 #define AmitieSmall ((gfx_sprite_t*)AmitieSmall_data)
-#define sizeof_logo_gfx_pal 348
-extern uint16_t logo_gfx_pal[174];
+#define sizeof_logo_gfx_pal 350
+extern uint16_t logo_gfx_pal[175];
 
 #endif

@@ -2,7 +2,8 @@
 #include <stdint.h>
 #include "logo_gfx.h"
 
-uint16_t logo_gfx_pal[174] = {
+uint16_t logo_gfx_pal[175] = {
+ // Amitie colors
  0xFFFF,  // 00 :: rgb(255,255,255)
  0xFFB9,  // 01 :: rgb(255,239,206)
  0x3043,  // 02 :: rgb(99,16,24)
@@ -170,6 +171,7 @@ uint16_t logo_gfx_pal[174] = {
  0x712D,  // 164 :: rgb(231,74,107)
  0x0000,  // 165 :: rgb(0,0,0)
 
+ // Custom colors
 
  0, // 166
  0, // 167
@@ -178,5 +180,6 @@ uint16_t logo_gfx_pal[174] = {
  0, // 170
  0, // 171
  0, // 172
- 0 // 173
+ 0, // 173
+ 0 // 174
 };

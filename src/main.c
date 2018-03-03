@@ -25,8 +25,6 @@
 #include <string.h>
 
 // Good graphics
-// Colors can be found here:
-// https://github.com/CE-Programming/toolchain/blob/88d8a7000bb95ae78758ee76eca7120de22b0afb/src/graphx/graphx.h
 #include <graphx.h>
 // Standard stuff
 #include <tice.h>
@@ -71,6 +69,7 @@
 #endif
 #define BOARD_X_OFFSET 10
 #define BOARD_BOARDER_COLOR COLOR_PINK
+#define BOARD_BACKGROUND_COLOR COLOR_GRAY
 
 #define ENABLE_PURPLE_PUYO 0
 
@@ -88,6 +87,7 @@
 	#define MAXPUYOINDEX PUYO_PURPLE // Does not include purple puyo
 #endif
 
+// Palette indexes for custom colors
 #define COLOR_RED 166
 #define COLOR_BLUE 167
 #define COLOR_GREEN 168
@@ -96,6 +96,7 @@
 #define COLOR_PINK 171
 #define COLOR_WHITE 172
 #define COLOR_BLACK 173
+#define COLOR_GRAY 174
 
 #define COLOR_POPPING_PUYO COLOR_PINK // Color of a puyo before it pops
 
@@ -222,7 +223,7 @@ void drawErrorCircle(){
 }
 
 void clearPuyoSpot(uint8_t _x, uint8_t _y){
-	goodChangeColor(COLOR_WHITE);
+	goodChangeColor(BOARD_BACKGROUND_COLOR);
 	#if USEGRAPHICSCLIPPING
 		gfx_FillRectangle(BOARD_X_OFFSET+_x*PUYO_RADIUS*2,BOARD_Y_OFFSET+_y*PUYO_RADIUS*2,PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
 	#else
@@ -231,7 +232,7 @@ void clearPuyoSpot(uint8_t _x, uint8_t _y){
 }
 
 void drawBoardBackground(){
-	goodChangeColor(COLOR_WHITE);
+	goodChangeColor(BOARD_BACKGROUND_COLOR);
 	gfx_FillRectangle(BOARD_X_OFFSET,BOARD_Y_OFFSET,PUYO_RADIUS*BOARD_WIDTH*2+1,PUYO_RADIUS*BOARD_HEIGHT*2+1);
 }
 // < number of puyos drawn > / 2 = amount to add ?
@@ -361,11 +362,17 @@ void _fallAndWritePuyoData(int8_t _x, int8_t _y, uint8_t _color){
 void fellPuyos(){
 	int8_t i;
 	int8_t j;
-	for (j=BOARD_HEIGHT-2;j>0;j--){
+	int8_t k;
+
+	for (j=BOARD_HEIGHT-2;j>=0;j--){
 		for (i=0;i<BOARD_WIDTH;i++){
-			if (puyoBoard[i][j+1]==PUYO_NONE){
-				puyoBoard[i][j+1] = puyoBoard[i][j];
-				puyoBoard[i][j]=0;
+			int8_t _cachedPuyoColor=puyoBoard[i][j];
+			puyoBoard[i][j] = PUYO_NONE;
+			for (k=j;;k++){
+				if (puyoBoard[i][k+1]!=PUYO_NONE || k+1==BOARD_HEIGHT){
+					puyoBoard[i][k]=_cachedPuyoColor;
+					break;
+				}
 			}
 		}
 	}
@@ -373,13 +380,12 @@ void fellPuyos(){
 
 // Returns 1 you need to call this function again
 int8_t popPuyos(){
-	uint8_t _puyoComboIDs[BOARD_WIDTH][BOARD_HEIGHT]={0};
+	uint8_t _specificPuyoIDs[BOARD_WIDTH][BOARD_HEIGHT]={0};
 	uint8_t _comboIDLengths[BOARD_WIDTH*BOARD_HEIGHT+1]; // Don't zero this array. Also don't make this array bigger than a signed byte can hold
 	uint8_t _nextComboID = 1;
 	uint8_t i;
 	uint8_t j;
-	int8_t k; // Used for the last loop to loop through _comboIDLengths . Also used as X variable when merging chain IDs
-	int8_t l; // Used as the Y variable when merging chain IDs
+	int8_t k;
 	uint8_t _puyoWasPopped=0;
 
 	_comboIDLengths[0]=0; // Unused slot.
@@ -387,62 +393,58 @@ int8_t popPuyos(){
 	// Read row by row, starting from the left
 	for (j=0;j<BOARD_HEIGHT;j++){
 		for (i=0;i<BOARD_WIDTH;i++){
-			if (puyoBoard[i][j]!=PUYO_NONE){
-				
-				if (i!=BOARD_WIDTH-1){ // If we can check to the right
-					if (puyoBoard[i+1][j]==puyoBoard[i][j]){ // If the puyo to the right is the same color
-						if (_puyoComboIDs[i+1][j]!=0){ // If that Puyo already has a chain ID
-							if (_puyoComboIDs[i][j]!=0){ // If we already have a chain ID 
-								if (_puyoComboIDs[i][j]!=_puyoComboIDs[i+1][j]){ // Merge both chain IDs if they're different
-									uint8_t _cachedIDToConvert = _puyoComboIDs[i+1][j];
-									for (l=j;l>0;l--){
-										for (k=0;k<BOARD_WIDTH;k++){
-											if (_puyoComboIDs[k][l]==_cachedIDToConvert){ // Find puyo with the same ID as the puyo to the right
-												_puyoComboIDs[k][l]=_puyoComboIDs[i][j]; // Make those puyos have the same ID as the current puyo
-											}
+			if (puyoBoard[i][j]!=PUYO_NONE){ // Only do stuff if we're on a puyo
+				if (i!=BOARD_WIDTH-1 && puyoBoard[i+1][j]==puyoBoard[i][j]){ // If we can check the puyo to the right and its the same color
+					if (_specificPuyoIDs[i+1][j]==0){ // If this other puyo doesn't have a combo ID
+						if (_specificPuyoIDs[i][j]==0){// If we don't have our own Puyo ID either, make one.
+							_specificPuyoIDs[i][j] = _nextComboID++; // Assign our brand new combo ID. Incremented value is not returned.
+							_comboIDLengths[_specificPuyoIDs[i][j]]=1; // New combo ID, so default length is 1
+						}
+						_specificPuyoIDs[i+1][j] = _specificPuyoIDs[i][j];
+						++_comboIDLengths[_specificPuyoIDs[i][j]];
+					}else{ // The other puyo already has an ID
+						if (_specificPuyoIDs[i+1][j]==_specificPuyoIDs[i][j]){ // They're both the same combo ID, we can do nothing.
+							// Do nothing with the puyo to the right
+						}else{ // Puyo IDs are different
+							if (_specificPuyoIDs[i][j]==0){ // We have no combo ID, we can just be added to the other puyo's combo ID
+								_specificPuyoIDs[i][j] = _specificPuyoIDs[i+1][j];
+								++_comboIDLengths[_specificPuyoIDs[i][j]];
+							}else{ // Combine the two combo IDs
+								int8_t l;
+								int8_t _cachedIDToConvert=_specificPuyoIDs[i+1][j];
+								for (l=j;l>0;l--){
+									for (k=0;k<BOARD_WIDTH;k++){
+										if (_specificPuyoIDs[k][l]==_cachedIDToConvert){ // Find puyo with the same ID as the puyo to the right
+											_specificPuyoIDs[k][l]=_specificPuyoIDs[i][j]; // Make those puyos have the same ID as the current puyo
 										}
 									}
-									_comboIDLengths[_puyoComboIDs[i][j]]+=_comboIDLengths[_cachedIDToConvert];
-									_comboIDLengths[_cachedIDToConvert]=0;
-								}// If they're both the same chain ID, do nothing
-							}else{ // We can use their chain ID instead
-								_puyoComboIDs[i][j] = _puyoComboIDs[i+1][j];
-								++_comboIDLengths[_puyoComboIDs[i][j]];
+								}
 							}
-						}else{ // Otherwise that other puyo will use this puyo's chain ID
-							if (_puyoComboIDs[i][j]==0){ // Make new combo ID for this puyo if needed
-								_puyoComboIDs[i][j]=_nextComboID;
-								++_nextComboID;
-								_comboIDLengths[_nextComboID]=1;
-							}
-							++_comboIDLengths[_nextComboID];
-							_puyoComboIDs[i+1][j]=_puyoComboIDs[i][j];
 						}
 					}
 				}
-				if (_puyoComboIDs[i][j]==0){ // If we didn't make a new chain ID in the last if statement
-					_puyoComboIDs[i][j]=_nextComboID;
-					_comboIDLengths[_nextComboID]=1;
-					_nextComboID++;
-				}
-				if (j!=BOARD_HEIGHT-1){ // If we can check under
-					if (puyoBoard[i][j+1]==puyoBoard[i][j]){ // If the puyo under is the same color
-						++_comboIDLengths[_puyoComboIDs[i][j]];
-						_puyoComboIDs[i][j+1]=_puyoComboIDs[i][j];
+				if (j!=BOARD_HEIGHT-1 && puyoBoard[i][j+1]==puyoBoard[i][j]){ // If we can check the puyo under and its the same color
+					if (_specificPuyoIDs[i][j]==0){// If we don't have our own Puyo ID either, make one.
+						_specificPuyoIDs[i][j] = _nextComboID++;
+						_comboIDLengths[_specificPuyoIDs[i][j]]=1;
 					}
+					++_comboIDLengths[_specificPuyoIDs[i][j]];
+					_specificPuyoIDs[i][j+1]=_specificPuyoIDs[i][j];
 				}
 			}
 		}
 	}
 
+	
 	for (k=0;k<_nextComboID;k++){
-		if (_comboIDLengths[k]>=MINPUYOMATCH){
+		if (_comboIDLengths[k]>=MINPUYOMATCH){ // If we need to pop this combo ID
 			_puyoWasPopped=1;
+			// Search board for puyos with matching combo IDs
 			for (j=0;j<BOARD_HEIGHT;j++){
 				for (i=0;i<BOARD_WIDTH;i++){
-					if (_puyoComboIDs[i][j]==k){
-						drawPuyo(i,j,COLOR_POPPING_PUYO);
-						puyoBoard[i][j]=PUYO_NONE;
+					if (_specificPuyoIDs[i][j]==k){ // If we found one
+						drawPuyo(i,j,COLOR_POPPING_PUYO); // Make it pink
+						puyoBoard[i][j]=PUYO_NONE; // Pop it
 					}
 				}
 			}
@@ -467,7 +469,9 @@ void lockPuyos(){
 		_fallAndWritePuyoData(myPuyoX,myPuyoY,primaryPuyoColor);
 		_fallAndWritePuyoData(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),secondaryPuyoColor);
 	}
-	while (popPuyos()==1);
+	while (popPuyos()==1){
+		delay(SINGLE_POP_DELAY);
+	}
 }
 
 //////////////////////////////////////////////////////////
@@ -505,6 +509,7 @@ void initPuyo84(){
 	logo_gfx_pal[COLOR_PURPLE] = gfx_RGBTo1555(150,0,255); // Purple
 	logo_gfx_pal[COLOR_PINK] = gfx_RGBTo1555(220,0,170); // Pink
 	logo_gfx_pal[COLOR_WHITE] = gfx_RGBTo1555(255,255,255); // White
+	logo_gfx_pal[COLOR_GRAY] = gfx_RGBTo1555(212,208,200); // Gray
 	logo_gfx_pal[COLOR_BLACK] = gfx_RGBTo1555(0,0,0); // Black
 	// Set palette
 	gfx_SetPalette(logo_gfx_pal, sizeof_logo_gfx_pal, 0);
@@ -531,6 +536,13 @@ void initPuyo84(){
 	puyoBoard[1][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[1][BOARD_HEIGHT-2]=PUYO_RED;
 	puyoBoard[2][BOARD_HEIGHT-1]=PUYO_RED;
+
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-1]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-2]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-4]=PUYO_RED;
+
+	puyoBoard[0][0]=PUYO_BLUE;
 }
 
 void main(void) {
@@ -552,7 +564,7 @@ void main(void) {
 	//gfx_FillCircle(9,9,PUYO_RADIUS);
 
 	drawBothPuyos();
-	while (!quitButtonPressed()){
+	while (1){
 		for (i=0;i<PUYO_DROP_SPEED;++i){
 			kb_Scan();
 			if (quitButtonPressed()){
@@ -586,6 +598,9 @@ void main(void) {
 					myPuyoX--;
 					drawBothPuyos();
 				}
+			}
+			if (pauseButtonPressed()){
+
 			}
 			if (downButtonPressed()){
 				delay(HOLD_DOWN_DELAY);
