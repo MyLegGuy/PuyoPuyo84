@@ -1,0 +1,2 @@
+you should not generate the converted image yourself because it needs modified palette data.
+Here's the source image if you wish to do so anyway.
