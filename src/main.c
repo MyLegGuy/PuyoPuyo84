@@ -5,8 +5,6 @@
 	 License: MIT (See LICENSE)
 	 Description: Puyo Puyo clone for Ti-84 Plus CE
 	--------------------------------------
-
-	The license is stupid because these calculator games get reuploaded a lot, I think. Maybe I'm just stupid.
 */
 
 //////////////////////////////////////////////////////////
@@ -54,7 +52,11 @@
 #define BOARD_WIDTH 6
 #define BOARD_HEIGHT 12
 
+#define MAXPUYOFORECAST 2
+
 #define PUYO_RADIUS 9
+// For next next puyo
+#define PUYO_RADIUS_SMALL 4
 
 #define KEYBOARD_POLL_WAIT 10
 // < wanted time > / KEYBOARD_POLL_WAIT
@@ -113,7 +115,7 @@
 
 // Keyboard data:
 //http://ce-programming.github.io/toolchain/keypadc_8h.html#a8cea914fc7256292713f6cd915e111ac
-#if 1 // Normal controls
+#if 0 // Normal controls
 	#define CONDITION_CLOCKWISE_BUTTON wasJustPressed(1,kb_Mode)
 	#define CONDITION_COUNTERCLOCKWISE_BUTTON wasJustPressed(1,kb_2nd)
 #else // Emulator controls
@@ -136,6 +138,9 @@ uint8_t currentColor=255;
 
 uint8_t primaryPuyoColor=PUYO_RED;
 uint8_t secondaryPuyoColor=PUYO_BLUE;
+
+uint8_t nextPrimaryPuyoColor[MAXPUYOFORECAST];
+uint8_t nextSecondaryPuyoColor[MAXPUYOFORECAST];
 
 uint8_t puyoColors[MAXPUYOINDEX];
 
@@ -317,6 +322,7 @@ void spinPuyo(int8_t _direction){
 			_possibleNewOrientation=secondaryPuyoOrientation+1;
 		}
 	}
+	// If spinning the secondary puyo will cause problems
 	if (isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,_possibleNewOrientation),getSecondaryPuyoY(myPuyoY,_possibleNewOrientation))){
 		if (_possibleNewOrientation==PUYO_ORIENTATION_RIGHT){
 			if (!isOnTopOfAnything(myPuyoX-1,myPuyoY)){ // Try to shift main puyo left
@@ -338,13 +344,15 @@ void spinPuyo(int8_t _direction){
 			// This should not happen.
 			drawErrorCircle();
 		}
+
+		// If primary puyo shifting didn't work
 		if (_possibleNewOrientation!=PUYO_ORIENTATION_UNDEFINED){ // This variable is set to PUYO_ORIENTATION_UNDEFINED if we got primary puyo shifting to work. This code happens if primary puyo shifting doesn't work.
-			if (_direction==1){
-				if (isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,_possibleNewOrientation),getSecondaryPuyoY(myPuyoY,_possibleNewOrientation))){
+			if (secondaryPuyoOrientation==PUYO_ORIENTATION_UP){
+				secondaryPuyoOrientation = PUYO_ORIENTATION_DOWN;
+				if (isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation))){
 					myPuyoY--;
 				}
-				secondaryPuyoOrientation = PUYO_ORIENTATION_DOWN;
-			}else if (_direction==-1){
+			}else{
 				secondaryPuyoOrientation = PUYO_ORIENTATION_UP;
 			}
 		}
@@ -355,14 +363,27 @@ void spinPuyo(int8_t _direction){
 
 
 // Don't call directly
-void _generateNewPuyoColors(){
-	primaryPuyoColor = randInt(1,MAXPUYOINDEX-1);
-	secondaryPuyoColor = randInt(1,MAXPUYOINDEX-1);
+void _generateNewPuyoColor(uint8_t* _color){
+	*_color = randInt(1,MAXPUYOINDEX-1);
 }
 void generateNewPuyos(){
+	uint8_t i;
+	
+	// Assign current puyo colors
+	primaryPuyoColor = nextPrimaryPuyoColor[0];
+	secondaryPuyoColor = nextSecondaryPuyoColor[0];
+	// Shift forecast array
+	for (i=0;i<MAXPUYOFORECAST-1;i++){
+		nextPrimaryPuyoColor[i] = nextPrimaryPuyoColor[i+1];
+		nextSecondaryPuyoColor[i] = nextSecondaryPuyoColor[i+1];
+	}
+	// Add to end of forecast array
+	_generateNewPuyoColor(&(nextPrimaryPuyoColor[MAXPUYOFORECAST-1]));
+	_generateNewPuyoColor(&(nextSecondaryPuyoColor[MAXPUYOFORECAST-1]));
+
+	// Reset current puyo position
 	myPuyoX=3;
 	myPuyoY=1;
-	_generateNewPuyoColors();
 	secondaryPuyoOrientation = PUYO_ORIENTATION_UP;
 }
 // Don't call directly
@@ -400,7 +421,7 @@ void fellPuyos(){
 }
 
 // Returns 1 you need to call this function again
-int8_t popPuyos(uint8_t _isFirstTime){
+int8_t popPuyos(uint8_t* _currentCombo){
 	uint8_t _specificPuyoIDs[BOARD_WIDTH][BOARD_HEIGHT]={0};
 	uint8_t _comboIDLengths[BOARD_WIDTH*BOARD_HEIGHT+1]; // Don't zero this array. Also don't make this array bigger than a signed byte can hold
 	uint8_t _nextComboID = 1;
@@ -461,7 +482,7 @@ int8_t popPuyos(uint8_t _isFirstTime){
 	
 	for (k=0;k<_nextComboID;k++){
 		if (_comboIDLengths[k]>=MINPUYOMATCH){ // If we need to pop this combo ID
-			if (_puyoWasPopped==0 && _isFirstTime==0){
+			if (_puyoWasPopped==0 && *_currentCombo!=0){
 				delay(SINGLE_POP_DELAY); // If this is the second combo, delay beore popping more because we want the player to see the board after their first chain.
 			}
 			_puyoWasPopped=1;
@@ -471,6 +492,7 @@ int8_t popPuyos(uint8_t _isFirstTime){
 					if (_specificPuyoIDs[i][j]==k){ // If we found one
 						drawPuyo(i,j,COLOR_POPPING_PUYO); // Make it pink
 						puyoBoard[i][j]=PUYO_NONE; // Pop it
+						++*_currentCombo;
 					}
 				}
 			}
@@ -488,25 +510,26 @@ int8_t popPuyos(uint8_t _isFirstTime){
 
 // Lock puyo into place and do combos
 void lockPuyos(){
+	uint8_t _currentCombo=0;
 	if (secondaryPuyoOrientation==PUYO_ORIENTATION_DOWN){ // If the secondary puyo is down, we need it to fall first.
 		_fallAndWritePuyoData(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),secondaryPuyoColor);
 		_fallAndWritePuyoData(myPuyoX,myPuyoY,primaryPuyoColor);
 	}else{ // Otherwise, have the first puyo fall first.
 		_fallAndWritePuyoData(myPuyoX,myPuyoY,primaryPuyoColor);
 		_fallAndWritePuyoData(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),secondaryPuyoColor);
-	}
-	if (popPuyos(1)==1){
-		while (popPuyos(0)==1);
-	}
+	}	
+	while (popPuyos(&_currentCombo)==1);
 }
 
 //////////////////////////////////////////////////////////
 // Because init() is already taken.
 void initPuyo84(){
+	uint8_t i;
+
 	// Init board memory
 	clearPuyoBoard();
 
-	// Init colors
+	// Init color indexes
 	puyoColors[PUYO_NONE] = COLOR_WHITE;
 	puyoColors[PUYO_RED] = COLOR_RED;
 	puyoColors[PUYO_GREEN] = COLOR_GREEN;
@@ -519,29 +542,47 @@ void initPuyo84(){
 	// Init graphics
 	gfx_Begin();
 
-	// Reset color variable
-	gfx_SetColor(COLOR_WHITE);
-	currentColor = COLOR_WHITE;
-
-	srand(rtc_Time());
-
-	generateNewPuyos();
-
 	// Modify palette
 	logo_gfx_pal[COLOR_RED] = gfx_RGBTo1555(255,0,0); // Red
 	logo_gfx_pal[COLOR_BLUE] = gfx_RGBTo1555(0,0,255); // Blue
 	logo_gfx_pal[COLOR_GREEN] = gfx_RGBTo1555(0,190,0); // Green
-	logo_gfx_pal[COLOR_YELLOW] = gfx_RGBTo1555(174,174,0); // Yellow TODO - I don't like this.
+	logo_gfx_pal[COLOR_YELLOW] = gfx_RGBTo1555(174,174,0); // Yellow
 	logo_gfx_pal[COLOR_PURPLE] = gfx_RGBTo1555(150,0,255); // Purple
 	logo_gfx_pal[COLOR_PINK] = gfx_RGBTo1555(220,0,170); // Pink
 	logo_gfx_pal[COLOR_WHITE] = gfx_RGBTo1555(255,255,255); // White
 	logo_gfx_pal[COLOR_GRAY] = gfx_RGBTo1555(212,208,200); // Gray
 	logo_gfx_pal[COLOR_BLACK] = gfx_RGBTo1555(0,0,0); // Black
-	// Set palette
+
+	// Set custom palette
 	gfx_SetPalette(logo_gfx_pal, sizeof_logo_gfx_pal, 0);
 
+	// Reset color variable
+	gfx_SetColor(COLOR_WHITE);
+	currentColor = COLOR_WHITE;
+
+	// Text color
+	gfx_SetTextFGColor(COLOR_GREEN);
+
+	// Init random numbers
+	srand(rtc_Time());
+
+	// Init puyo forecast
+	for (i=0;i<MAXPUYOFORECAST;i++){
+		_generateNewPuyoColor(&(nextPrimaryPuyoColor[i]));
+		_generateNewPuyoColor(&(nextSecondaryPuyoColor[i]));
+	}
+
+	// Init currnet puyos
+	generateNewPuyos();
+
+	// Init controls
 	kb_Scan();
 	controlsStart();
+
+	// Start main game
+	redrawEverything();
+
+	//////////////////////////////////////////////////////////////////
 
 	// TEST PATTERNS
 	/*
@@ -564,27 +605,27 @@ void initPuyo84(){
 	puyoBoard[1][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[1][BOARD_HEIGHT-2]=PUYO_RED;
 	puyoBoard[2][BOARD_HEIGHT-1]=PUYO_RED;
-
+	*/
+	/*
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-2]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-4]=PUYO_RED;
 	*/
-
+	/*
 	puyoBoard[BOARD_WIDTH-3][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-2][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-2]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
+	*/
 }
 
 void main(void) {
-	uint8_t i;
+	int8_t i;
 	uint8_t j;
 
 	initPuyo84();
-
-	redrawEverything();
 
 	//for (i=0;i<6;++i){
 	//	for (j=0;j<12;++j){
@@ -636,7 +677,7 @@ void main(void) {
 			if (pauseButtonPressed()){
 				goodChangeColor(COLOR_BLACK);
 				gfx_FillRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT);
-				gfx_SetTextFGColor(COLOR_GREEN);
+				
 				gfx_PrintStringXY(PAUSEDSTRING, (SCREEN_WIDTH-gfx_GetStringWidth(PAUSEDSTRING))/2, (SCREEN_HEIGHT-8)/2); // 8 is default font height?
 				while(1){
 					controlsStart();
@@ -661,7 +702,6 @@ void main(void) {
 		if (gameIsRunning){
 			// Will the puyos hit something if we go down one more?
 			if (isOnTopOfAnything(myPuyoX,myPuyoY+1) || isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation)+1)){
-				// TODO - Fell puyos
 				lockPuyos();
 				generateNewPuyos();
 			}else{ // Won't hit anything, fall as normal.
@@ -673,16 +713,6 @@ void main(void) {
 
 	}
 
-	//drawBothPuyos();
-	///* Wait for a key press */
-	//while (!os_GetCSC()){
-	//	// Increment here
-	//	hideBothPuyos();
-	//	myPuyoY++;
-	//	drawBothPuyos();
-	//	while (!os_GetCSC());
-	//	delay(2000);
-	//}
 	gfx_End();
 }
 
