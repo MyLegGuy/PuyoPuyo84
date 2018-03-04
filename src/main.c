@@ -49,14 +49,17 @@
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
 
+#define PAUSEDSTRING "Pause"
+
 #define BOARD_WIDTH 6
 #define BOARD_HEIGHT 12
 
 #define PUYO_RADIUS 9
 
-#define KEYBOARD_POLL_WAIT 50
-// < wanted time > / 50
-#define PUYO_DROP_SPEED 10
+#define KEYBOARD_POLL_WAIT 10
+// < wanted time > / KEYBOARD_POLL_WAIT
+// Right now I'm doing 500
+#define PUYO_DROP_SPEED 50
 
 // 240 - BOARD_X_OFFSET - PUYO_RADIUS*BOARD_HEIGHT*2
 #if PUYO_RADIUS==9
@@ -98,7 +101,7 @@
 #define COLOR_BLACK 173
 #define COLOR_GRAY 174
 
-#define COLOR_POPPING_PUYO COLOR_PINK // Color of a puyo before it pops
+#define COLOR_POPPING_PUYO COLOR_BLACK // Color of a puyo before it pops
 
 // Orientation of secondary puyo
 // Default is this, up
@@ -110,14 +113,14 @@
 
 // Keyboard data:
 //http://ce-programming.github.io/toolchain/keypadc_8h.html#a8cea914fc7256292713f6cd915e111ac
-#if 0 // Normal controls
-	#define CONDITION_CLOCKWISE_BUTTON (kb_Data[1] & kb_Mode)
-	#define CONDITION_COUNTERCLOCKWISE_BUTTON (kb_Data[1] & kb_2nd)
+#if 1 // Normal controls
+	#define CONDITION_CLOCKWISE_BUTTON wasJustPressed(1,kb_Mode)
+	#define CONDITION_COUNTERCLOCKWISE_BUTTON wasJustPressed(1,kb_2nd)
 #else // Emulator controls
-	#define CONDITION_CLOCKWISE_BUTTON (kb_Data[2] & kb_Store)
-	#define CONDITION_COUNTERCLOCKWISE_BUTTON (kb_Data[4] & kb_2)
+	#define CONDITION_CLOCKWISE_BUTTON wasJustPressed(2,kb_Store)
+	#define CONDITION_COUNTERCLOCKWISE_BUTTON wasJustPressed(4,kb_2)
 #endif
-#define CONDITION_PAUSE_BUTTON (kb_Data[1] & kb_Del)
+#define CONDITION_PAUSE_BUTTON wasJustPressed(1,kb_Del)
 
 //////////////////////////////////////////////////////////
 
@@ -138,7 +141,25 @@ uint8_t puyoColors[MAXPUYOINDEX];
 
 uint8_t secondaryPuyoOrientation=PUYO_ORIENTATION_UP;
 
+uint8_t gameIsRunning=1;
+
+kb_key_t lastKeyboardData[8];
+
 //////////////////////////////////////////////////////////
+
+void controlsStart(){
+	uint8_t i;
+	for (i=1;i<8;i++){
+		lastKeyboardData[i] = kb_Data[i];
+	}
+	kb_Scan();
+}
+uint8_t isDown(uint8_t _index,kb_lkey_t _testKey){
+	return kb_Data[_index] & _testKey;
+}
+uint8_t wasJustPressed(uint8_t _index,kb_lkey_t _testKey){
+	return (!(lastKeyboardData[_index] & _testKey) && (kb_Data[_index] & _testKey));
+}
 uint8_t pauseButtonPressed(){
 	return CONDITION_PAUSE_BUTTON;
 }
@@ -150,19 +171,19 @@ uint8_t counterclockwiseButtonPressed(){
 }
 // I guess I could use the up button for quick drop one day?
 uint8_t upButtonPressed(){
-	return (kb_Data[7] & kb_Up);
+	return wasJustPressed(7,kb_Up);
 }
 uint8_t downButtonPressed(){
-	return (kb_Data[7] & kb_Down);
+	return isDown(7,kb_Down);
 }
 uint8_t leftButtonPressed(){
-	return (kb_Data[7] & kb_Left);
+	return wasJustPressed(7,kb_Left);
 }
 uint8_t rightButtonPressed(){
-	return (kb_Data[7] & kb_Right);
+	return wasJustPressed(7,kb_Right);
 }
 uint8_t quitButtonPressed(){
-	return (kb_Data[6] & kb_Clear);
+	return wasJustPressed(6,kb_Clear);
 }
 
 void goodChangeColor(uint8_t _color){
@@ -379,7 +400,7 @@ void fellPuyos(){
 }
 
 // Returns 1 you need to call this function again
-int8_t popPuyos(){
+int8_t popPuyos(uint8_t _isFirstTime){
 	uint8_t _specificPuyoIDs[BOARD_WIDTH][BOARD_HEIGHT]={0};
 	uint8_t _comboIDLengths[BOARD_WIDTH*BOARD_HEIGHT+1]; // Don't zero this array. Also don't make this array bigger than a signed byte can hold
 	uint8_t _nextComboID = 1;
@@ -412,10 +433,12 @@ int8_t popPuyos(){
 							}else{ // Combine the two combo IDs
 								int8_t l;
 								int8_t _cachedIDToConvert=_specificPuyoIDs[i+1][j];
+								_comboIDLengths[_cachedIDToConvert]=0; // Other chain ID won't be used anymore, remove it.
 								for (l=j;l>0;l--){
 									for (k=0;k<BOARD_WIDTH;k++){
 										if (_specificPuyoIDs[k][l]==_cachedIDToConvert){ // Find puyo with the same ID as the puyo to the right
 											_specificPuyoIDs[k][l]=_specificPuyoIDs[i][j]; // Make those puyos have the same ID as the current puyo
+											++_comboIDLengths[_specificPuyoIDs[i][j]]; // Add to the new, combined puyo chain length
 										}
 									}
 								}
@@ -438,6 +461,9 @@ int8_t popPuyos(){
 	
 	for (k=0;k<_nextComboID;k++){
 		if (_comboIDLengths[k]>=MINPUYOMATCH){ // If we need to pop this combo ID
+			if (_puyoWasPopped==0 && _isFirstTime==0){
+				delay(SINGLE_POP_DELAY); // If this is the second combo, delay beore popping more because we want the player to see the board after their first chain.
+			}
 			_puyoWasPopped=1;
 			// Search board for puyos with matching combo IDs
 			for (j=0;j<BOARD_HEIGHT;j++){
@@ -469,8 +495,8 @@ void lockPuyos(){
 		_fallAndWritePuyoData(myPuyoX,myPuyoY,primaryPuyoColor);
 		_fallAndWritePuyoData(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),secondaryPuyoColor);
 	}
-	while (popPuyos()==1){
-		delay(SINGLE_POP_DELAY);
+	if (popPuyos(1)==1){
+		while (popPuyos(0)==1);
 	}
 }
 
@@ -485,9 +511,9 @@ void initPuyo84(){
 	puyoColors[PUYO_RED] = COLOR_RED;
 	puyoColors[PUYO_GREEN] = COLOR_GREEN;
 	puyoColors[PUYO_BLUE] = COLOR_BLUE;
-	puyoColors[PUYO_YELLOW] = COLOR_YELLOW;
+	puyoColors[PUYO_YELLOW] = COLOR_PINK;
 	if (MAXPUYOINDEX>=PUYO_PURPLE+1){
-		puyoColors[PUYO_PURPLE] = COLOR_PURPLE;
+		puyoColors[PUYO_PURPLE] = COLOR_YELLOW;
 	}
 
 	// Init graphics
@@ -504,8 +530,8 @@ void initPuyo84(){
 	// Modify palette
 	logo_gfx_pal[COLOR_RED] = gfx_RGBTo1555(255,0,0); // Red
 	logo_gfx_pal[COLOR_BLUE] = gfx_RGBTo1555(0,0,255); // Blue
-	logo_gfx_pal[COLOR_GREEN] = gfx_RGBTo1555(0,255,0); // Green
-	logo_gfx_pal[COLOR_YELLOW] = gfx_RGBTo1555(255,255,0); // Yellow TODO - I don't like this.
+	logo_gfx_pal[COLOR_GREEN] = gfx_RGBTo1555(0,190,0); // Green
+	logo_gfx_pal[COLOR_YELLOW] = gfx_RGBTo1555(174,174,0); // Yellow TODO - I don't like this.
 	logo_gfx_pal[COLOR_PURPLE] = gfx_RGBTo1555(150,0,255); // Purple
 	logo_gfx_pal[COLOR_PINK] = gfx_RGBTo1555(220,0,170); // Pink
 	logo_gfx_pal[COLOR_WHITE] = gfx_RGBTo1555(255,255,255); // White
@@ -513,6 +539,9 @@ void initPuyo84(){
 	logo_gfx_pal[COLOR_BLACK] = gfx_RGBTo1555(0,0,0); // Black
 	// Set palette
 	gfx_SetPalette(logo_gfx_pal, sizeof_logo_gfx_pal, 0);
+
+	kb_Scan();
+	controlsStart();
 
 	// TEST PATTERNS
 	/*
@@ -530,8 +559,7 @@ void initPuyo84(){
 	puyoBoard[2][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[2][BOARD_HEIGHT-2]=PUYO_RED;
 	*/
-
-	// TODO - This is not detected
+	/*
 	puyoBoard[0][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[1][BOARD_HEIGHT-1]=PUYO_RED;
 	puyoBoard[1][BOARD_HEIGHT-2]=PUYO_RED;
@@ -541,8 +569,13 @@ void initPuyo84(){
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-2]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-4]=PUYO_RED;
+	*/
 
-	puyoBoard[0][0]=PUYO_BLUE;
+	puyoBoard[BOARD_WIDTH-3][BOARD_HEIGHT-1]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-2][BOARD_HEIGHT-1]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-1]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-2]=PUYO_RED;
+	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
 }
 
 void main(void) {
@@ -564,10 +597,11 @@ void main(void) {
 	//gfx_FillCircle(9,9,PUYO_RADIUS);
 
 	drawBothPuyos();
-	while (1){
+	while (gameIsRunning){
 		for (i=0;i<PUYO_DROP_SPEED;++i){
-			kb_Scan();
+			controlsStart();
 			if (quitButtonPressed()){
+				gameIsRunning=0;
 				break;
 			}
 			if (clockwiseButtonPressed()){
@@ -600,7 +634,22 @@ void main(void) {
 				}
 			}
 			if (pauseButtonPressed()){
-
+				goodChangeColor(COLOR_BLACK);
+				gfx_FillRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT);
+				gfx_SetTextFGColor(COLOR_GREEN);
+				gfx_PrintStringXY(PAUSEDSTRING, (SCREEN_WIDTH-gfx_GetStringWidth(PAUSEDSTRING))/2, (SCREEN_HEIGHT-8)/2); // 8 is default font height?
+				while(1){
+					controlsStart();
+					if (pauseButtonPressed()){
+						break;
+					}
+					if (quitButtonPressed()){
+						gameIsRunning=0;
+						break;
+					}
+					delay(KEYBOARD_POLL_WAIT);
+				}
+				redrawEverything();
 			}
 			if (downButtonPressed()){
 				delay(HOLD_DOWN_DELAY);
@@ -609,15 +658,17 @@ void main(void) {
 			delay(KEYBOARD_POLL_WAIT);
 		}
 
-		// Will the puyos hit something if we go down one more?
-		if (isOnTopOfAnything(myPuyoX,myPuyoY+1) || isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation)+1)){
-			// TODO - Fell puyos
-			lockPuyos();
-			generateNewPuyos();
-		}else{ // Won't hit anything, fall as normal.
-			hideBothPuyos();
-			myPuyoY++;
-			drawBothPuyos();
+		if (gameIsRunning){
+			// Will the puyos hit something if we go down one more?
+			if (isOnTopOfAnything(myPuyoX,myPuyoY+1) || isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation)+1)){
+				// TODO - Fell puyos
+				lockPuyos();
+				generateNewPuyos();
+			}else{ // Won't hit anything, fall as normal.
+				hideBothPuyos();
+				myPuyoY++;
+				drawBothPuyos();
+			}
 		}
 
 	}
