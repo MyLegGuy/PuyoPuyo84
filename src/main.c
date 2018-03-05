@@ -5,6 +5,10 @@
 	 License: MIT (See LICENSE)
 	 Description: Puyo Puyo clone for Ti-84 Plus CE
 	--------------------------------------
+	TODO - Counter for this chain's score
+	TODO - Total score counter
+	TODO - Hiscore
+	TODO - Highest chain ever
 */
 
 //////////////////////////////////////////////////////////
@@ -36,6 +40,13 @@
 // Define
 //////////////////////////////////////////////////////////
 
+#define PUYO_SPAWN_X 3
+#define PUYO_SPAWN_Y 1
+
+#define BACKGROUND_COLOR COLOR_BLACK
+
+#define DRAW_WAIFU 1
+
 #define HOLD_DOWN_DELAY 75
 
 #define SINGLE_POP_DELAY 500
@@ -46,6 +57,8 @@
 
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
+
+#define MAXDEFINEDATTACKPOWER 24
 
 #define PAUSEDSTRING "Pause"
 
@@ -150,7 +163,56 @@ uint8_t gameIsRunning=1;
 
 kb_key_t lastKeyboardData[8];
 
+uint32_t currentScore=0;
+
+// Puyo Puyo Tsu values
+// https://puyonexus.com/wiki/List_of_attack_powers
+//uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {0,8,16,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672}; // Multiplayer values
+uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {4,20,24,32,48,96,160,240,320,480,600,700,800,900,999,999,999,999,999,999,999,999,999,999}; // Singleplayer values
+
+// Has value for purple no matter what
+// https://puyonexus.com/wiki/Scoring#Color_Bonus
+uint8_t colorBonus[PUYO_PURPLE+1] = {0,3,6,12,24};
+
+// https://puyonexus.com/wiki/Scoring#Group_Bonus
+uint8_t groupBonus[8] = {0,2,3,4,5,6,7,10};
+
+
 //////////////////////////////////////////////////////////
+void goodChangeColor(uint8_t _color){
+	if (_color!=currentColor){
+		gfx_SetColor(_color);
+		currentColor = _color;
+	}
+}
+// Pass number of puyo popped in this group
+uint8_t getGroupBonus(uint8_t _numberPoppedInGroup){
+	if (_numberPoppedInGroup-4>11){
+		return groupBonus[7]; // Return max if more than 11 popped
+	}
+	if (_numberPoppedInGroup<4){ // If we allow 3 puyo to pop
+		return groupBonus[0];
+	}
+	return groupBonus[_numberPoppedInGroup-4];
+}
+
+// _groupBonus needs to be calculated manually
+uint16_t scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, uint8_t _numberOfDifferentColors, uint8_t _groupBonus){
+	uint16_t _partOne = (10*_puyosClearedInChain);
+	uint16_t _partTwo = (attackPowers[_numberOfChains-1]+colorBonus[_numberOfDifferentColors-1]+_groupBonus);
+	return _partOne*_partTwo;
+}
+
+void redrawScore(uint32_t _scoreToDraw){
+	char _numberStringBuffer[10]; // Buffer will be used completely
+	// Hide old score
+	goodChangeColor(BACKGROUND_COLOR);
+	gfx_FillRectangle(BOARD_X_OFFSET,SCREEN_HEIGHT-8,BOARD_WIDTH*PUYO_RADIUS*2,8);
+	// Make new string
+	sprintf(&(_numberStringBuffer[0]),"%09d",_scoreToDraw);
+	// Print new string
+	gfx_PrintStringXY(_numberStringBuffer, BOARD_X_OFFSET+(BOARD_WIDTH*PUYO_RADIUS*2-gfx_GetStringWidth(_numberStringBuffer))/2, SCREEN_HEIGHT-8); // 8 is default font height?
+}
 
 void controlsStart(){
 	uint8_t i;
@@ -190,14 +252,6 @@ uint8_t rightButtonPressed(){
 uint8_t quitButtonPressed(){
 	return wasJustPressed(6,kb_Clear);
 }
-
-void goodChangeColor(uint8_t _color){
-	if (_color!=currentColor){
-		gfx_SetColor(_color);
-		currentColor = _color;
-	}
-}
-
 uint8_t getSecondaryPuyoX(uint8_t _passedFirstPuyoX, uint8_t _passedPuyoOrientation){
 	switch (_passedPuyoOrientation){
 		case PUYO_ORIENTATION_LEFT:
@@ -279,11 +333,33 @@ void redrawPuyoBoard(){
 	}
 	drawBoardBoarder();
 }
-void redrawEverything(){
-	gfx_FillScreen(COLOR_BLACK);
-	gfx_Sprite(AmitieSmall, SCREEN_WIDTH-AmitieSmall_width, SCREEN_HEIGHT-AmitieSmall_height);
-	redrawPuyoBoard();
+void redrawPuyoForecast(){
+	uint8_t i;
+	drawPuyo(BOARD_WIDTH+1,0,puyoColors[nextPrimaryPuyoColor[0]]);
+	drawPuyo(BOARD_WIDTH+1,1,puyoColors[nextSecondaryPuyoColor[0]]);
+	for (i=1;i<MAXPUYOFORECAST;i++){
+		if (i%2==0){
+			drawPuyo(BOARD_WIDTH+1,i*2,puyoColors[nextPrimaryPuyoColor[i]]);
+			drawPuyo(BOARD_WIDTH+1,i*2+1,puyoColors[nextSecondaryPuyoColor[i]]);
+		}else{
+			drawPuyo(BOARD_WIDTH+2,i*2,puyoColors[nextPrimaryPuyoColor[i]]);
+			drawPuyo(BOARD_WIDTH+2,i*2+1,puyoColors[nextSecondaryPuyoColor[i]]);
+		}
+	}
 }
+void redrawWaifu(){
+	#if DRAW_WAIFU
+		gfx_Sprite(AmitieSmall, SCREEN_WIDTH-AmitieSmall_width, SCREEN_HEIGHT-AmitieSmall_height);
+	#endif
+}
+void redrawEverything(){
+	gfx_FillScreen(BACKGROUND_COLOR);
+	redrawWaifu();
+	redrawPuyoBoard();
+	redrawPuyoForecast();
+	redrawScore(currentScore);
+}
+
 void hideBothPuyos(){
 	clearPuyoSpot(myPuyoX,myPuyoY);
 	clearPuyoSpot(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation));
@@ -382,8 +458,8 @@ void generateNewPuyos(){
 	_generateNewPuyoColor(&(nextSecondaryPuyoColor[MAXPUYOFORECAST-1]));
 
 	// Reset current puyo position
-	myPuyoX=3;
-	myPuyoY=1;
+	myPuyoX=PUYO_SPAWN_X;
+	myPuyoY=PUYO_SPAWN_Y;
 	secondaryPuyoOrientation = PUYO_ORIENTATION_UP;
 }
 // Don't call directly
@@ -500,6 +576,11 @@ int8_t popPuyos(uint8_t* _currentCombo){
 	}
 
 	if (_puyoWasPopped){
+		//scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, uint8_t _numberOfDifferentColors, uint8_t _groupBonus)
+		// TODO - Placeholder
+		currentScore+=scoreFormula(4,*_currentCombo,1,0);
+		redrawScore(currentScore);
+
 		delay(SINGLE_POP_DELAY);
 		fellPuyos();
 		redrawPuyoBoard();
@@ -704,6 +785,8 @@ void main(void) {
 			if (isOnTopOfAnything(myPuyoX,myPuyoY+1) || isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation)+1)){
 				lockPuyos();
 				generateNewPuyos();
+				redrawPuyoForecast();
+				drawBothPuyos();
 			}else{ // Won't hit anything, fall as normal.
 				hideBothPuyos();
 				myPuyoY++;
