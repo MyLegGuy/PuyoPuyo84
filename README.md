@@ -1,1 +1,1 @@
-puyo puyo for ti-84
+Puyo Puyo for Ti-84 Plus CE

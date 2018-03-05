@@ -167,8 +167,8 @@ uint32_t currentScore=0;
 
 // Puyo Puyo Tsu values
 // https://puyonexus.com/wiki/List_of_attack_powers
-//uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {0,8,16,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672}; // Multiplayer values
-uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {4,20,24,32,48,96,160,240,320,480,600,700,800,900,999,999,999,999,999,999,999,999,999,999}; // Singleplayer values
+uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {0,8,16,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672}; // Multiplayer values
+//uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {4,20,24,32,48,96,160,240,320,480,600,700,800,900,999,999,999,999,999,999,999,999,999,999}; // Singleplayer values
 
 // Has value for purple no matter what
 // https://puyonexus.com/wiki/Scoring#Color_Bonus
@@ -200,6 +200,11 @@ uint8_t getGroupBonus(uint8_t _numberPoppedInGroup){
 uint16_t scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, uint8_t _numberOfDifferentColors, uint8_t _groupBonus){
 	uint16_t _partOne = (10*_puyosClearedInChain);
 	uint16_t _partTwo = (attackPowers[_numberOfChains-1]+colorBonus[_numberOfDifferentColors-1]+_groupBonus);
+	if (_partTwo<1){
+		_partTwo=1;
+	}else if (_partTwo>999){
+		_partTwo=999;
+	}
 	return _partOne*_partTwo;
 }
 
@@ -506,6 +511,10 @@ int8_t popPuyos(uint8_t* _currentCombo){
 	int8_t k;
 	uint8_t _puyoWasPopped=0;
 
+	// Scoring stuff
+	uint16_t _totalPuyosClearedInChain=0;
+	uint8_t _whichPuyoColorsPopped[MAXPUYOINDEX]={0};
+	uint16_t _calculatedGroupBonus=0;
 	_comboIDLengths[0]=0; // Unused slot.
 
 	// Read row by row, starting from the left
@@ -558,6 +567,7 @@ int8_t popPuyos(uint8_t* _currentCombo){
 	
 	for (k=0;k<_nextComboID;k++){
 		if (_comboIDLengths[k]>=MINPUYOMATCH){ // If we need to pop this combo ID
+			uint8_t _totalPuyosInGroup=0;
 			if (_puyoWasPopped==0 && *_currentCombo!=0){
 				delay(SINGLE_POP_DELAY); // If this is the second combo, delay beore popping more because we want the player to see the board after their first chain.
 			}
@@ -568,17 +578,27 @@ int8_t popPuyos(uint8_t* _currentCombo){
 					if (_specificPuyoIDs[i][j]==k){ // If we found one
 						drawPuyo(i,j,COLOR_POPPING_PUYO); // Make it pink
 						puyoBoard[i][j]=PUYO_NONE; // Pop it
-						++*_currentCombo;
+
+						// Scoring stuff
+						_whichPuyoColorsPopped[puyoBoard[i][j]]=1;
+						++_totalPuyosClearedInChain;
+						++_totalPuyosInGroup;
 					}
 				}
 			}
+			_calculatedGroupBonus+=getGroupBonus(_totalPuyosInGroup);
 		}
 	}
 
 	if (_puyoWasPopped){
-		//scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, uint8_t _numberOfDifferentColors, uint8_t _groupBonus)
-		// TODO - Placeholder
-		currentScore+=scoreFormula(4,*_currentCombo,1,0);
+		uint8_t _numberOfDifferentColors=0;
+		for (k=0;k<MAXPUYOINDEX;++k){
+			if (_whichPuyoColorsPopped[k]!=0){
+				++_numberOfDifferentColors;
+			}
+		}
+		++*_currentCombo;
+		currentScore+=scoreFormula(_totalPuyosClearedInChain,*_currentCombo,_numberOfDifferentColors,_calculatedGroupBonus);
 		redrawScore(currentScore);
 
 		delay(SINGLE_POP_DELAY);
