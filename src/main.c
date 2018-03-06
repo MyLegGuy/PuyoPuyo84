@@ -5,12 +5,9 @@
 	 License: MIT (See LICENSE)
 	 Description: Puyo Puyo clone for Ti-84 Plus CE
 	--------------------------------------
-	TODO - Counter for this chain's score
-	TODO - Total score counter
-	TODO - Hiscore
 	TODO - Highest chain ever
+	TODO - Title screen and options menu
 */
-
 //////////////////////////////////////////////////////////
 // Headers
 //////////////////////////////////////////////////////////
@@ -32,6 +29,8 @@
 #include <tice.h>
 // Keyboard
 #include <keypadc.h>
+// AppVar storage
+#include <fileioc.h>
 
 // Sprite data
 #include "gfx/logo_gfx.h"
@@ -40,8 +39,18 @@
 // Define
 //////////////////////////////////////////////////////////
 
-#define PUYO_SPAWN_X 3
-#define PUYO_SPAWN_Y 1
+// X pixels between the label and its value
+#define INFO_INDENTATION 5
+// Distance between the board and the info
+#define INFO_OFFSET 3
+
+#define FONT_HEIGHT 8
+
+#define PUYO_DEATH_X PUYO_SPAWN_X
+#define PUYO_DEATH_Y 0
+
+#define PUYO_SPAWN_X 2
+#define PUYO_SPAWN_Y 0
 
 #define BACKGROUND_COLOR COLOR_BLACK
 
@@ -61,6 +70,7 @@
 #define MAXDEFINEDATTACKPOWER 24
 
 #define PAUSEDSTRING "Pause"
+#define NEWHIMESSAGE "New High Score"
 
 #define BOARD_WIDTH 6
 #define BOARD_HEIGHT 12
@@ -165,20 +175,26 @@ kb_key_t lastKeyboardData[8];
 
 uint32_t currentScore=0;
 
+uint32_t highscore=0;
+uint8_t highestEverCombo=0;
+
 // Puyo Puyo Tsu values
 // https://puyonexus.com/wiki/List_of_attack_powers
-uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {0,8,16,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672}; // Multiplayer values
+const uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {0,8,16,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672}; // Multiplayer values
 //uint16_t attackPowers[MAXDEFINEDATTACKPOWER] = {4,20,24,32,48,96,160,240,320,480,600,700,800,900,999,999,999,999,999,999,999,999,999,999}; // Singleplayer values
 
 // Has value for purple no matter what
 // https://puyonexus.com/wiki/Scoring#Color_Bonus
-uint8_t colorBonus[PUYO_PURPLE+1] = {0,3,6,12,24};
+const uint8_t colorBonus[PUYO_PURPLE+1] = {0,3,6,12,24};
 
 // https://puyonexus.com/wiki/Scoring#Group_Bonus
-uint8_t groupBonus[8] = {0,2,3,4,5,6,7,10};
+const uint8_t groupBonus[8] = {0,2,3,4,5,6,7,10};
 
 
 //////////////////////////////////////////////////////////
+void drawX(uint8_t _x, uint8_t _y){
+
+}
 void goodChangeColor(uint8_t _color){
 	if (_color!=currentColor){
 		gfx_SetColor(_color);
@@ -207,18 +223,38 @@ uint16_t scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, ui
 	}
 	return _partOne*_partTwo;
 }
-
-void redrawScore(uint32_t _scoreToDraw){
-	char _numberStringBuffer[10]; // Buffer will be used completely
+void _drawScoreString(uint16_t _x, uint16_t _y, char* _scoreString){
 	// Hide old score
 	goodChangeColor(BACKGROUND_COLOR);
-	gfx_FillRectangle(BOARD_X_OFFSET,SCREEN_HEIGHT-8,BOARD_WIDTH*PUYO_RADIUS*2,8);
+	gfx_FillRectangle(_x,_y,9*9,8);
+	// Print new string
+	gfx_PrintStringXY(_scoreString, _x, _y); 
+}
+void drawScore(uint32_t _scoreToDraw, uint16_t _x, uint16_t _y){
+	//gfx_FillRectangle(BOARD_X_OFFSET,SCREEN_HEIGHT-8,9*9,8);
+	char _numberStringBuffer[10]; // Buffer will be used completely
 	// Make new string
 	sprintf(&(_numberStringBuffer[0]),"%09d",_scoreToDraw);
-	// Print new string
-	gfx_PrintStringXY(_numberStringBuffer, BOARD_X_OFFSET+(BOARD_WIDTH*PUYO_RADIUS*2-gfx_GetStringWidth(_numberStringBuffer))/2, SCREEN_HEIGHT-8); // 8 is default font height?
+	_drawScoreString(_x,_y,_numberStringBuffer);
 }
-
+uint16_t getBoardPixelWidth(){
+	return BOARD_WIDTH*PUYO_RADIUS*2;
+}
+// Need a lot of code because string needs to be centered.
+void redrawScore(uint32_t _scoreToDraw){
+	char _numberStringBuffer[10];
+	sprintf(&(_numberStringBuffer[0]),"%09d",_scoreToDraw);
+	_drawScoreString(BOARD_X_OFFSET+(getBoardPixelWidth()-gfx_GetStringWidth(_numberStringBuffer))/2,SCREEN_HEIGHT-FONT_HEIGHT,_numberStringBuffer); // 8 is default font height?
+}
+#define INFO_X_START (BOARD_X_OFFSET+getBoardPixelWidth()+1+INFO_OFFSET)
+#define INFO_Y_START (BOARD_Y_OFFSET+PUYO_RADIUS*MAXPUYOFORECAST*2*2+PUYO_RADIUS)
+#define SINGLE_INFO_HEIGHT (MAXPUYOFORECAST*2)
+void redrawInfoLabel(const char* _labelText, int _index){
+	gfx_PrintStringXY(_labelText,INFO_X_START,INFO_Y_START+SINGLE_INFO_HEIGHT*_index);
+}
+void redrawHighscore(uint32_t _scoreToDraw, int _index){
+	drawScore(_scoreToDraw,INFO_X_START+INFO_INDENTATION,INFO_Y_START+SINGLE_INFO_HEIGHT*_index+FONT_HEIGHT);
+}
 void controlsStart(){
 	uint8_t i;
 	for (i=1;i<8;i++){
@@ -286,9 +322,13 @@ void goodDrawCircle(uint16_t _x, uint16_t _y, uint8_t _radius){
 	#endif
 }
 
+uint16_t boardToRealCoords(uint16_t _value){
+	return _value*PUYO_RADIUS*2;
+}
+
 void drawPuyo(uint16_t _x, uint16_t _y, uint8_t _color){
 	goodChangeColor(_color);
-	goodDrawCircle(BOARD_X_OFFSET+_x*PUYO_RADIUS*2,BOARD_Y_OFFSET+_y*PUYO_RADIUS*2,PUYO_RADIUS);
+	goodDrawCircle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS);
 }
 
 void clearPuyoBoard(){
@@ -310,20 +350,20 @@ void drawErrorCircle(){
 void clearPuyoSpot(uint8_t _x, uint8_t _y){
 	goodChangeColor(BOARD_BACKGROUND_COLOR);
 	#if USEGRAPHICSCLIPPING
-		gfx_FillRectangle(BOARD_X_OFFSET+_x*PUYO_RADIUS*2,BOARD_Y_OFFSET+_y*PUYO_RADIUS*2,PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
+		gfx_FillRectangle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
 	#else
-		gfx_FillRectangle_NoClip(BOARD_X_OFFSET+_x*PUYO_RADIUS*2,BOARD_Y_OFFSET+_y*PUYO_RADIUS*2,PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
+		gfx_FillRectangle_NoClip(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
 	#endif
 }
 
 void drawBoardBackground(){
 	goodChangeColor(BOARD_BACKGROUND_COLOR);
-	gfx_FillRectangle(BOARD_X_OFFSET,BOARD_Y_OFFSET,PUYO_RADIUS*BOARD_WIDTH*2+1,PUYO_RADIUS*BOARD_HEIGHT*2+1);
+	gfx_FillRectangle(BOARD_X_OFFSET,BOARD_Y_OFFSET,getBoardPixelWidth()+1,PUYO_RADIUS*BOARD_HEIGHT*2+1);
 }
 // < number of puyos drawn > / 2 = amount to add ?
 void drawBoardBoarder(){
 	goodChangeColor(BOARD_BOARDER_COLOR);
-	gfx_Rectangle(BOARD_X_OFFSET-1,BOARD_Y_OFFSET-1,BOARD_WIDTH*PUYO_RADIUS*2+3,BOARD_HEIGHT*PUYO_RADIUS*2+3);
+	gfx_Rectangle(BOARD_X_OFFSET-1,BOARD_Y_OFFSET-1,getBoardPixelWidth()+3,BOARD_HEIGHT*PUYO_RADIUS*2+3);
 }
 void redrawPuyoBoard(){
 	uint8_t i;
@@ -357,14 +397,18 @@ void redrawWaifu(){
 		gfx_Sprite(AmitieSmall, SCREEN_WIDTH-AmitieSmall_width, SCREEN_HEIGHT-AmitieSmall_height);
 	#endif
 }
+void redrawAllInfo(){
+	redrawInfoLabel("Highscore",0);
+	redrawHighscore(highscore,0);
+	redrawScore(currentScore);
+}
 void redrawEverything(){
 	gfx_FillScreen(BACKGROUND_COLOR);
 	redrawWaifu();
 	redrawPuyoBoard();
 	redrawPuyoForecast();
-	redrawScore(currentScore);
+	redrawAllInfo();
 }
-
 void hideBothPuyos(){
 	clearPuyoSpot(myPuyoX,myPuyoY);
 	clearPuyoSpot(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation));
@@ -441,7 +485,6 @@ void spinPuyo(int8_t _direction){
 		secondaryPuyoOrientation = _possibleNewOrientation;
 	}
 }
-
 
 // Don't call directly
 void _generateNewPuyoColor(uint8_t* _color){
@@ -622,6 +665,32 @@ void lockPuyos(){
 	while (popPuyos(&_currentCombo)==1);
 }
 
+char playerIsDead(){
+	if (puyoBoard[PUYO_DEATH_X][PUYO_DEATH_Y]!=PUYO_NONE){
+		return 1;
+	}
+	return 0;
+}
+void writeScore(char* _appvarName, uint32_t _value){
+	ti_var_t myAppVar;
+	myAppVar = ti_Open(_appvarName, "w");
+	if (myAppVar==0){
+		return;
+	}
+	ti_Write(&_value,sizeof(uint32_t),1,myAppVar);
+	ti_CloseAll();
+}
+void loadScore(char* _appvarName, uint32_t* _value){
+	ti_var_t myAppVar;
+	myAppVar = ti_Open(_appvarName, "r");
+	if (myAppVar==0){
+		*_value=0;
+		return;
+	}
+	ti_Read(_value,sizeof(uint32_t),1,myAppVar);
+	ti_CloseAll();
+}
+
 //////////////////////////////////////////////////////////
 // Because init() is already taken.
 void initPuyo84(){
@@ -680,6 +749,11 @@ void initPuyo84(){
 	kb_Scan();
 	controlsStart();
 
+	// Close files that were already open.
+	ti_CloseAll();
+	// Should probably be after the file closing
+	loadScore("NPUYOHI",&highscore);
+
 	// Start main game
 	redrawEverything();
 
@@ -728,16 +802,6 @@ void main(void) {
 
 	initPuyo84();
 
-	//for (i=0;i<6;++i){
-	//	for (j=0;j<12;++j){
-	//		goodDrawCircle(BOARD_X_OFFSET+i*PUYO_RADIUS*2,BOARD_Y_OFFSET+j*PUYO_RADIUS*2,PUYO_RADIUS);
-	//	}
-	//}
-	//goodChangeColor(gfx_red);
-	//gfx_FillRectangle(0,0,PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
-	//goodChangeColor(gfx_blue);
-	//gfx_FillCircle(9,9,PUYO_RADIUS);
-
 	drawBothPuyos();
 	while (gameIsRunning){
 		for (i=0;i<PUYO_DROP_SPEED;++i){
@@ -779,7 +843,7 @@ void main(void) {
 				goodChangeColor(COLOR_BLACK);
 				gfx_FillRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT);
 				
-				gfx_PrintStringXY(PAUSEDSTRING, (SCREEN_WIDTH-gfx_GetStringWidth(PAUSEDSTRING))/2, (SCREEN_HEIGHT-8)/2); // 8 is default font height?
+				gfx_PrintStringXY(PAUSEDSTRING, (SCREEN_WIDTH-gfx_GetStringWidth(PAUSEDSTRING))/2, (SCREEN_HEIGHT-FONT_HEIGHT)/2); // 8 is default font height?
 				while(1){
 					controlsStart();
 					if (pauseButtonPressed()){
@@ -804,6 +868,29 @@ void main(void) {
 			// Will the puyos hit something if we go down one more?
 			if (isOnTopOfAnything(myPuyoX,myPuyoY+1) || isOnTopOfAnything(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation)+1)){
 				lockPuyos();
+				if (playerIsDead()){
+					if (currentScore>highscore){
+						controlsStart();
+						writeScore("NPUYOHI",currentScore);
+						for (;!quitButtonPressed();i=!i){
+							controlsStart();
+							goodChangeColor(BACKGROUND_COLOR);
+							gfx_FillRectangle((SCREEN_WIDTH-gfx_GetStringWidth(NEWHIMESSAGE))/(double)2-3,(SCREEN_HEIGHT-FONT_HEIGHT)/(double)2-3,gfx_GetStringWidth(NEWHIMESSAGE)+6,14);
+							if (i%2==0){
+								gfx_PrintStringXY(NEWHIMESSAGE,(SCREEN_WIDTH-gfx_GetStringWidth(NEWHIMESSAGE))/(double)2,(SCREEN_HEIGHT-FONT_HEIGHT)/(double)2);
+							}
+							delay(200);
+						}
+						
+					}
+					// TODO - Draw and kill
+					controlsStart();
+					gfx_PrintStringXY("is kill",0,0);
+					while (!quitButtonPressed()){
+						controlsStart();
+						gameIsRunning=0;
+					}
+				}
 				generateNewPuyos();
 				redrawPuyoForecast();
 				drawBothPuyos();
