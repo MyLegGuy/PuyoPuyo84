@@ -5,7 +5,6 @@
 	 License: MIT (See LICENSE)
 	 Description: Puyo Puyo clone for Ti-84 Plus CE
 	--------------------------------------
-	TODO - Title screen and options menu
 */
 //////////////////////////////////////////////////////////
 // Headers
@@ -34,6 +33,10 @@
 // Sprite data
 #include "gfx/logo_gfx.h"
 
+// main.h
+	void savePlayerData();
+	uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOptions, uint8_t _startingChoice);
+
 //////////////////////////////////////////////////////////
 // Define
 //////////////////////////////////////////////////////////
@@ -53,8 +56,6 @@
 
 #define BACKGROUND_COLOR COLOR_BLACK
 
-uint8_t doDrawWaifu = 1;
-
 #define POSSIBLE_NUMBER_WIDTH 9
 
 #define HOLD_DOWN_DELAY 75
@@ -72,12 +73,15 @@ uint8_t doDrawWaifu = 1;
 
 #define PAUSEDSTRING "Pause"
 #define NEWHIMESSAGE "New High Score"
-#define SAVEFILENAME "NPUYOSAV"
+#define SAVEOPTIONSNAME "NPUYOSAV"
+#define SAVEGAMENAME "NPUYOGAM"
 
 /*
 	1 - Initial release
 */
 #define SAVEFILEVERSION 1
+//
+#define TEACHERKEYVERSION 1
 
 #define BOARD_WIDTH 6
 #define BOARD_HEIGHT 12
@@ -150,12 +154,15 @@ uint8_t doDrawWaifu = 1;
 	#define CONDITION_CLOCKWISE_BUTTON wasJustPressed(2,kb_Store)
 	#define CONDITION_COUNTERCLOCKWISE_BUTTON wasJustPressed(4,kb_2)
 #endif
-#define CONDITION_PAUSE_BUTTON wasJustPressed(1,kb_Del)
+#define CONDITION_PAUSE_BUTTON wasJustPressed(1,kb_Yequ)
+#define CONDITION_TEACHER_KEY wasJustPressed(1,kb_Window)
 
 //////////////////////////////////////////////////////////
 
 
 //////////////////////////////////////////////////////////
+
+uint8_t doDrawWaifu = 1;
 
 uint8_t puyoBoard[BOARD_WIDTH][BOARD_HEIGHT];
 
@@ -292,6 +299,9 @@ uint8_t isDown(uint8_t _index,kb_lkey_t _testKey){
 }
 uint8_t wasJustPressed(uint8_t _index,kb_lkey_t _testKey){
 	return (!(lastKeyboardData[_index] & _testKey) && (kb_Data[_index] & _testKey));
+}
+uint8_t teacherKeyPressed(){
+	return CONDITION_TEACHER_KEY;
 }
 uint8_t pauseButtonPressed(){
 	return CONDITION_PAUSE_BUTTON;
@@ -681,39 +691,7 @@ int8_t popPuyos(uint8_t* _currentCombo){
 	}
 	return 0;
 }
-void savePlayerData(){
-	ti_var_t myAppVar;
-	uint8_t _tempFileFormatVersion;
-	myAppVar = ti_Open(SAVEFILENAME, "w");
-	if (myAppVar==0){
-		return;
-	}
-	_tempFileFormatVersion = SAVEFILEVERSION;
-	ti_Write(&_tempFileFormatVersion,sizeof(uint8_t),1,myAppVar);
-	ti_Write(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
-	ti_Write(&highscore,sizeof(uint32_t),1,myAppVar);
-	ti_Write(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
-	ti_CloseAll();
-}
-void loadPlayerData(){
-	ti_var_t myAppVar;
-	uint8_t _tempReadFileFormatVersion;
-	myAppVar = ti_Open(SAVEFILENAME, "r");
-	if (myAppVar==0){
-		highscore=0;
-		highestEverCombo=0;
-		return;
-	}
-	ti_Read(&_tempReadFileFormatVersion,sizeof(uint8_t),1,myAppVar);
-	if (_tempReadFileFormatVersion>SAVEFILEVERSION){ // Savefile is valid
-		drawErrorCircle();
-	}else{ // Savefile may be valid
-		ti_Read(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
-		ti_Read(&highscore,sizeof(uint32_t),1,myAppVar);
-		ti_Read(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
-	}
-	ti_CloseAll();
-}
+
 // Lock puyo into place and do combos
 void lockPuyos(){
 	uint8_t _currentCombo=0;
@@ -738,6 +716,119 @@ char playerIsDead(){
 	}
 	return 0;
 }
+
+uint8_t yesOrNo(char* _prompt, uint8_t _defaultToYes){
+	char* _menuOptions[] = {"Yes","Not Yes"};
+	return !genericMenu(_prompt,&(_menuOptions[0]),2,!_defaultToYes);
+}
+
+/////////////////////////////////////////////////
+
+// For options
+void savePlayerData(){
+	ti_var_t myAppVar;
+	uint8_t _tempFileFormatVersion;
+	myAppVar = ti_Open(SAVEOPTIONSNAME, "w");
+	if (myAppVar==0){
+		drawErrorCircle();
+		delay(300);
+		return;
+	}
+	_tempFileFormatVersion = SAVEFILEVERSION;
+	ti_Write(&_tempFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&highscore,sizeof(uint32_t),1,myAppVar);
+	ti_Write(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
+	ti_CloseAll();
+}
+void loadPlayerData(){
+	ti_var_t myAppVar;
+	uint8_t _tempReadFileFormatVersion;
+	myAppVar = ti_Open(SAVEOPTIONSNAME, "r");
+	if (myAppVar==0){
+		highscore=0;
+		highestEverCombo=0;
+		return;
+	}
+	ti_Read(&_tempReadFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	if (_tempReadFileFormatVersion>SAVEFILEVERSION){
+		drawErrorCircle();
+	}else{ // Savefile may be valid
+		ti_Read(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
+		ti_Read(&highscore,sizeof(uint32_t),1,myAppVar);
+		ti_Read(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
+	}
+	ti_CloseAll();
+}
+
+// For teacher key
+void loadGame(){
+	ti_var_t myAppVar;
+	uint8_t _tempReadFileFormatVersion;
+	uint8_t _tempMaxPuyoForecastHold = MAXPUYOFORECAST;
+	uint8_t i;
+	uint8_t j;
+	myAppVar = ti_Open(SAVEGAMENAME, "r");
+	if (myAppVar==0){
+		return;
+	}
+	ti_Read(&_tempReadFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	if (_tempReadFileFormatVersion>TEACHERKEYVERSION){
+		drawErrorCircle();
+	}else{
+		for (i=0;i<BOARD_WIDTH;++i){
+			for (j=0;j<BOARD_HEIGHT;++j){
+				ti_Read(&(puyoBoard[i][j]),sizeof(uint8_t),1,myAppVar);
+			}
+		}
+		ti_Read(&currentScore,sizeof(uint32_t),1,myAppVar);
+		ti_Read(&primaryPuyoColor,sizeof(uint8_t),1,myAppVar);
+		ti_Read(&secondaryPuyoColor,sizeof(uint8_t),1,myAppVar);
+		ti_Read(&_tempMaxPuyoForecastHold,sizeof(uint8_t),1,myAppVar);
+		for (i=0;i<_tempMaxPuyoForecastHold;++i){
+			ti_Read(&(nextPrimaryPuyoColor[i]),sizeof(uint8_t),1,myAppVar);
+			ti_Read(&(nextSecondaryPuyoColor[i]),sizeof(uint8_t),1,myAppVar);
+		}
+	}
+	ti_CloseAll();
+	ti_Delete(SAVEGAMENAME);
+	ti_CloseAll();
+	
+	// Tell player savegame was loaded.
+	gfx_FillScreen(COLOR_RED);
+	delay(100);
+	gfx_FillScreen(COLOR_BLACK);
+}
+void saveGame(){
+	ti_var_t myAppVar;
+	uint8_t _tempFileFormatVersion=TEACHERKEYVERSION;
+	uint8_t _tempMaxPuyoForecastHold = MAXPUYOFORECAST;
+	uint8_t i;
+	uint8_t j;
+	myAppVar = ti_Open(SAVEGAMENAME, "w");
+	if (myAppVar==0){
+		drawErrorCircle();
+		delay(300);
+		return;
+	}
+	ti_Write(&_tempFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	for (i=0;i<BOARD_WIDTH;++i){
+		for (j=0;j<BOARD_HEIGHT;++j){
+			ti_Write(&(puyoBoard[i][j]),sizeof(uint8_t),1,myAppVar);
+		}
+	}
+	ti_Write(&currentScore,sizeof(uint32_t),1,myAppVar);
+	ti_Write(&primaryPuyoColor,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&secondaryPuyoColor,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&_tempMaxPuyoForecastHold,sizeof(uint8_t),1,myAppVar);
+	for (i=0;i<MAXPUYOFORECAST;++i){
+		ti_Write(&(nextPrimaryPuyoColor[i]),sizeof(uint8_t),1,myAppVar);
+		ti_Write(&(nextSecondaryPuyoColor[i]),sizeof(uint8_t),1,myAppVar);
+	}
+	ti_CloseAll();
+}
+
+/////////////////////////////////////////////////
 
 uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOptions, uint8_t _startingChoice){
 	uint16_t _drawStart = centerGeneric(8*(_totalMenuOptions+2),SCREEN_HEIGHT);
@@ -779,22 +870,34 @@ uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOpti
 	return 0;
 }
 
-void optionsMenu(){
+uint8_t optionsMenu(){
 	uint8_t _chosenMenuOption=0;
 	while (1){
-		char* _menuOptions[2]={"Back",NULL};
+		char* _menuOptions[]={"Back",NULL,"Delete High","Delete Temp Save"};
 		_menuOptions[1] = malloc(strlen("NOT AMITIE")+1);
 		if (doDrawWaifu){
 			strcpy(_menuOptions[1],"Amitie");
 		}else{
 			strcpy(_menuOptions[1],"NOT Amitie");
 		}
-		_chosenMenuOption = genericMenu("Options",&(_menuOptions[0]),2,_chosenMenuOption);
+		_chosenMenuOption = genericMenu("Options",&(_menuOptions[0]),4,_chosenMenuOption);
 		free(_menuOptions[1]);
 		if (_chosenMenuOption==0){
-			return;	
+			return 0;
 		}else if (_chosenMenuOption==1){
 			doDrawWaifu=!doDrawWaifu;
+		}else if (_chosenMenuOption==2){
+			if (yesOrNo("Really delete high scores and settings?",0)){
+				ti_Delete(SAVEOPTIONSNAME);
+				ti_CloseAll();
+				return 1;
+			}
+		}else if (_chosenMenuOption==3){
+			if (yesOrNo("Really delete temp savefile?",0)){
+				ti_Delete(SAVEGAMENAME);
+				ti_CloseAll();
+				return 1;
+			}
 		}
 	}
 }
@@ -806,9 +909,12 @@ char titleScreen(){
 		char* _menuOptions[] = {"Play","Options","Not Play"};
 		_chosenMenuOption = genericMenu("Puyo Puyo 84",&(_menuOptions[0]),3,_chosenMenuOption);
 		if (_chosenMenuOption==0){
+			loadGame();
 			return 0;
 		}else if (_chosenMenuOption==1){
-			optionsMenu();
+			if (optionsMenu()==1){
+				return 1;
+			}
 			savePlayerData();
 			continue;
 		}else if (_chosenMenuOption==2){
@@ -918,7 +1024,6 @@ void initPuyo84(){
 	puyoBoard[BOARD_WIDTH-1][BOARD_HEIGHT-3]=PUYO_RED;
 	*/
 }
-
 void main(void) {
 	int8_t i;
 	uint8_t j;
@@ -937,6 +1042,11 @@ void main(void) {
 		for (i=0;i<PUYO_DROP_SPEED;++i){
 			controlsStart();
 			if (quitButtonPressed()){
+				gameIsRunning=0;
+				break;
+			}
+			if (teacherKeyPressed()){
+				saveGame();
 				gameIsRunning=0;
 				break;
 			}
