@@ -53,7 +53,7 @@
 
 #define BACKGROUND_COLOR COLOR_BLACK
 
-#define DRAW_WAIFU 1
+uint8_t doDrawWaifu = 1;
 
 #define POSSIBLE_NUMBER_WIDTH 9
 
@@ -419,9 +419,9 @@ void redrawPuyoForecast(){
 	}
 }
 void redrawWaifu(){
-	#if DRAW_WAIFU
+	if (doDrawWaifu){
 		gfx_Sprite(AmitieSmall, SCREEN_WIDTH-AmitieSmall_width, SCREEN_HEIGHT-AmitieSmall_height);
-	#endif
+	}
 }
 void redrawAllInfo(){
 	redrawInfoLabel("Highscore",0);
@@ -690,6 +690,7 @@ void savePlayerData(){
 	}
 	_tempFileFormatVersion = SAVEFILEVERSION;
 	ti_Write(&_tempFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
 	ti_Write(&highscore,sizeof(uint32_t),1,myAppVar);
 	ti_Write(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
 	ti_CloseAll();
@@ -707,6 +708,7 @@ void loadPlayerData(){
 	if (_tempReadFileFormatVersion>SAVEFILEVERSION){ // Savefile is valid
 		drawErrorCircle();
 	}else{ // Savefile may be valid
+		ti_Read(&doDrawWaifu,sizeof(uint8_t),1,myAppVar);
 		ti_Read(&highscore,sizeof(uint32_t),1,myAppVar);
 		ti_Read(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
 	}
@@ -737,28 +739,22 @@ char playerIsDead(){
 	return 0;
 }
 
-void optionsMenu(){
-	
-}
-
-// Return 1 to quit
-char titleScreen(){
-	uint16_t _drawStart = centerGeneric(8*5,SCREEN_HEIGHT);
-	uint8_t _totalMenuOptions=3;
-	char* _menuOptions[] = {"Play","Options","Not Play"};
+uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOptions, uint8_t _startingChoice){
+	uint16_t _drawStart = centerGeneric(8*(_totalMenuOptions+2),SCREEN_HEIGHT);
 	uint8_t i;
-	uint8_t _choice=0;
+	uint8_t _choice=_startingChoice;
 	gfx_FillScreen(BACKGROUND_COLOR);
-	gfx_PrintStringXY("Puyo Puyo 84",centerStringWidth("Puyo Puyo 84",SCREEN_WIDTH),_drawStart);
-	for (i=1;i<_totalMenuOptions;i++){
+	gfx_SetTextFGColor(COLOR_WHITE);
+	gfx_PrintStringXY(_menuName,centerStringWidth(_menuName,SCREEN_WIDTH),_drawStart);
+	for (i=0;i<_totalMenuOptions;i++){
 		gfx_PrintStringXY(_menuOptions[i],centerStringWidth(_menuOptions[i],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(i+2));
 	}
-	gfx_SetTextFGColor(COLOR_WHITE);
-	gfx_PrintStringXY(_menuOptions[0],centerStringWidth(_menuOptions[0],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(0+2));
+	gfx_SetTextFGColor(COLOR_GREEN);
+	gfx_PrintStringXY(_menuOptions[_choice],centerStringWidth(_menuOptions[_choice],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(_choice+2));
 	while(1){
 		controlsStart();
 		if (upButtonPressed() || downButtonPressed()){
-			gfx_SetTextFGColor(COLOR_GREEN);
+			gfx_SetTextFGColor(COLOR_WHITE);
 			gfx_PrintStringXY(_menuOptions[_choice],centerStringWidth(_menuOptions[_choice],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(_choice+2));
 			if (downButtonPressed()){
 				if (_choice==_totalMenuOptions-1){
@@ -773,23 +769,52 @@ char titleScreen(){
 					_choice-=1;
 				}
 			}
-			gfx_SetTextFGColor(COLOR_WHITE);
+			gfx_SetTextFGColor(COLOR_GREEN);
 			gfx_PrintStringXY(_menuOptions[_choice],centerStringWidth(_menuOptions[_choice],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(_choice+2));
 		}
-		if (quitButtonPressed()){
-			return 1;
-		}
 		if (clockwiseButtonPressed()){
-			if (_choice==0){
-				return 0;
-			}else if (_choice==1){
-
-			}else if (_choice==2){
-				return 1;
-			}
+			return _choice;
 		}
 	}
 	return 0;
+}
+
+void optionsMenu(){
+	uint8_t _chosenMenuOption=0;
+	while (1){
+		char* _menuOptions[2]={"Back",NULL};
+		_menuOptions[1] = malloc(strlen("NOT AMITIE")+1);
+		if (doDrawWaifu){
+			strcpy(_menuOptions[1],"Amitie");
+		}else{
+			strcpy(_menuOptions[1],"NOT Amitie");
+		}
+		_chosenMenuOption = genericMenu("Options",&(_menuOptions[0]),2,_chosenMenuOption);
+		free(_menuOptions[1]);
+		if (_chosenMenuOption==0){
+			return;	
+		}else if (_chosenMenuOption==1){
+			doDrawWaifu=!doDrawWaifu;
+		}
+	}
+}
+
+// Return 1 to quit
+char titleScreen(){
+	uint8_t _chosenMenuOption=0;
+	while (1){
+		char* _menuOptions[] = {"Play","Options","Not Play"};
+		_chosenMenuOption = genericMenu("Puyo Puyo 84",&(_menuOptions[0]),3,_chosenMenuOption);
+		if (_chosenMenuOption==0){
+			return 0;
+		}else if (_chosenMenuOption==1){
+			optionsMenu();
+			savePlayerData();
+			continue;
+		}else if (_chosenMenuOption==2){
+			return 1;
+		}
+	}
 }
 
 //////////////////////////////////////////////////////////
