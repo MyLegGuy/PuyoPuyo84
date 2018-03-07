@@ -5,7 +5,6 @@
 	 License: MIT (See LICENSE)
 	 Description: Puyo Puyo clone for Ti-84 Plus CE
 	--------------------------------------
-	TODO - Highest chain ever
 	TODO - Title screen and options menu
 */
 //////////////////////////////////////////////////////////
@@ -56,6 +55,8 @@
 
 #define DRAW_WAIFU 1
 
+#define POSSIBLE_NUMBER_WIDTH 9
+
 #define HOLD_DOWN_DELAY 75
 
 #define SINGLE_POP_DELAY 500
@@ -71,6 +72,12 @@
 
 #define PAUSEDSTRING "Pause"
 #define NEWHIMESSAGE "New High Score"
+#define SAVEFILENAME "NPUYOSAV"
+
+/*
+	1 - Initial release
+*/
+#define SAVEFILEVERSION 1
 
 #define BOARD_WIDTH 6
 #define BOARD_HEIGHT 12
@@ -86,14 +93,12 @@
 // Right now I'm doing 500
 #define PUYO_DROP_SPEED 50
 
-// 240 - BOARD_X_OFFSET - PUYO_RADIUS*BOARD_HEIGHT*2
 #if PUYO_RADIUS==9
 	#define BOARD_Y_OFFSET 14
 #elif PUYO_RADIUS==8
 	#define BOARD_Y_OFFSET 34
 #else
-	#define BOARD_Y_OFFSET 0
-	#warning Please caclulate BOARD_Y_OFFSET
+	#define BOARD_Y_OFFSET (240 - BOARD_X_OFFSET - PUYO_RADIUS*BOARD_HEIGHT*2)
 #endif
 #define BOARD_X_OFFSET 10
 #define BOARD_BOARDER_COLOR COLOR_PINK
@@ -190,16 +195,22 @@ const uint8_t colorBonus[PUYO_PURPLE+1] = {0,3,6,12,24};
 // https://puyonexus.com/wiki/Scoring#Group_Bonus
 const uint8_t groupBonus[8] = {0,2,3,4,5,6,7,10};
 
+#define PUYO_WIDTH (PUYO_RADIUS*2+1)
+#define PUYO_HEIGHT (PUYO_RADIUS*2+1)
 
 //////////////////////////////////////////////////////////
-void drawX(uint8_t _x, uint8_t _y){
-
-}
 void goodChangeColor(uint8_t _color){
 	if (_color!=currentColor){
 		gfx_SetColor(_color);
 		currentColor = _color;
 	}
+}
+uint16_t boardToRealCoords(int16_t _value){
+	return _value*PUYO_RADIUS*2;
+}
+void drawX(uint8_t _x, uint8_t _y){
+	goodChangeColor(COLOR_POPPING_PUYO);
+	gfx_FillRectangle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_WIDTH,PUYO_HEIGHT);
 }
 // Pass number of puyo popped in this group
 uint8_t getGroupBonus(uint8_t _numberPoppedInGroup){
@@ -226,7 +237,7 @@ uint16_t scoreFormula(uint16_t _puyosClearedInChain, uint8_t _numberOfChains, ui
 void _drawScoreString(uint16_t _x, uint16_t _y, char* _scoreString){
 	// Hide old score
 	goodChangeColor(BACKGROUND_COLOR);
-	gfx_FillRectangle(_x,_y,9*9,8);
+	gfx_FillRectangle(_x,_y,POSSIBLE_NUMBER_WIDTH*9,8);
 	// Print new string
 	gfx_PrintStringXY(_scoreString, _x, _y); 
 }
@@ -240,19 +251,33 @@ void drawScore(uint32_t _scoreToDraw, uint16_t _x, uint16_t _y){
 uint16_t getBoardPixelWidth(){
 	return BOARD_WIDTH*PUYO_RADIUS*2;
 }
+uint16_t centerGeneric(uint16_t _size,uint16_t _areaSize){
+	return (_areaSize-_size)/(double)2;
+}
+uint16_t centerStringWidth(char* _stringToCenter, uint16_t _maxSize){
+	return centerGeneric(gfx_GetStringWidth(_stringToCenter),_maxSize);
+}
+
 // Need a lot of code because string needs to be centered.
 void redrawScore(uint32_t _scoreToDraw){
 	char _numberStringBuffer[10];
 	sprintf(&(_numberStringBuffer[0]),"%09d",_scoreToDraw);
-	_drawScoreString(BOARD_X_OFFSET+(getBoardPixelWidth()-gfx_GetStringWidth(_numberStringBuffer))/2,SCREEN_HEIGHT-FONT_HEIGHT,_numberStringBuffer); // 8 is default font height?
+	_drawScoreString(BOARD_X_OFFSET+centerStringWidth(_numberStringBuffer,getBoardPixelWidth()),SCREEN_HEIGHT-FONT_HEIGHT,_numberStringBuffer); // 8 is default font height?
 }
 #define INFO_X_START (BOARD_X_OFFSET+getBoardPixelWidth()+1+INFO_OFFSET)
 #define INFO_Y_START (BOARD_Y_OFFSET+PUYO_RADIUS*MAXPUYOFORECAST*2*2+PUYO_RADIUS)
-#define SINGLE_INFO_HEIGHT (MAXPUYOFORECAST*2)
-void redrawInfoLabel(const char* _labelText, int _index){
+#define SINGLE_INFO_HEIGHT (2*+FONT_HEIGHT)
+void redrawInfoLabel(const char* _labelText, uint8_t _index){
 	gfx_PrintStringXY(_labelText,INFO_X_START,INFO_Y_START+SINGLE_INFO_HEIGHT*_index);
 }
-void redrawHighscore(uint32_t _scoreToDraw, int _index){
+void redrawInfoLabelValue(uint32_t _value, uint8_t _index){
+	char _numberStringBuffer[10];
+	sprintf(&(_numberStringBuffer[0]),"%d",_value);
+	goodChangeColor(BACKGROUND_COLOR);
+	gfx_FillRectangle(INFO_X_START+INFO_INDENTATION,INFO_Y_START+SINGLE_INFO_HEIGHT*_index+FONT_HEIGHT,POSSIBLE_NUMBER_WIDTH*9,FONT_HEIGHT);
+	gfx_PrintStringXY(_numberStringBuffer,INFO_X_START+INFO_INDENTATION,INFO_Y_START+SINGLE_INFO_HEIGHT*_index+FONT_HEIGHT);
+}
+void redrawHighscore(uint32_t _scoreToDraw, uint8_t _index){
 	drawScore(_scoreToDraw,INFO_X_START+INFO_INDENTATION,INFO_Y_START+SINGLE_INFO_HEIGHT*_index+FONT_HEIGHT);
 }
 void controlsStart(){
@@ -282,6 +307,9 @@ uint8_t upButtonPressed(){
 	return wasJustPressed(7,kb_Up);
 }
 uint8_t downButtonPressed(){
+	return wasJustPressed(7,kb_Down);
+}
+uint8_t downButtonHeld(){
 	return isDown(7,kb_Down);
 }
 uint8_t leftButtonPressed(){
@@ -313,7 +341,6 @@ uint8_t getSecondaryPuyoY(uint8_t _passedFirstPuyoY, uint8_t _passedPuyoOrientat
 			return _passedFirstPuyoY;
 	}
 }
-
 void goodDrawCircle(uint16_t _x, uint16_t _y, uint8_t _radius){
 	#if USEGRAPHICSCLIPPING
 		gfx_FillCircle(_x+_radius,_y+_radius,_radius);
@@ -321,11 +348,6 @@ void goodDrawCircle(uint16_t _x, uint16_t _y, uint8_t _radius){
 		gfx_FillCircle_NoClip(_x+_radius,_y+_radius,_radius);
 	#endif
 }
-
-uint16_t boardToRealCoords(uint16_t _value){
-	return _value*PUYO_RADIUS*2;
-}
-
 void drawPuyo(uint16_t _x, uint16_t _y, uint8_t _color){
 	goodChangeColor(_color);
 	goodDrawCircle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS);
@@ -348,12 +370,16 @@ void drawErrorCircle(){
 }
 
 void clearPuyoSpot(uint8_t _x, uint8_t _y){
-	goodChangeColor(BOARD_BACKGROUND_COLOR);
-	#if USEGRAPHICSCLIPPING
-		gfx_FillRectangle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
-	#else
-		gfx_FillRectangle_NoClip(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
-	#endif
+	if (_x==PUYO_DEATH_X && _y==PUYO_DEATH_Y){
+		drawX(PUYO_DEATH_X,PUYO_DEATH_Y);
+	}else{
+		goodChangeColor(BOARD_BACKGROUND_COLOR);
+		#if USEGRAPHICSCLIPPING
+			gfx_FillRectangle(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
+		#else
+			gfx_FillRectangle_NoClip(BOARD_X_OFFSET+boardToRealCoords(_x),BOARD_Y_OFFSET+boardToRealCoords(_y),PUYO_RADIUS*2+1,PUYO_RADIUS*2+1);
+		#endif
+	}
 }
 
 void drawBoardBackground(){
@@ -400,22 +426,26 @@ void redrawWaifu(){
 void redrawAllInfo(){
 	redrawInfoLabel("Highscore",0);
 	redrawHighscore(highscore,0);
+	redrawInfoLabel("Highest Chain",1);
+	redrawInfoLabelValue(highestEverCombo,1);
 	redrawScore(currentScore);
+}
+void drawBothPuyos(){
+	drawPuyo(myPuyoX,myPuyoY,puyoColors[primaryPuyoColor]);
+	drawPuyo(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),puyoColors[secondaryPuyoColor]);
 }
 void redrawEverything(){
 	gfx_FillScreen(BACKGROUND_COLOR);
 	redrawWaifu();
 	redrawPuyoBoard();
+	drawX(PUYO_DEATH_X,PUYO_DEATH_Y);
 	redrawPuyoForecast();
 	redrawAllInfo();
+	drawBothPuyos();
 }
 void hideBothPuyos(){
 	clearPuyoSpot(myPuyoX,myPuyoY);
 	clearPuyoSpot(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation));
-}
-void drawBothPuyos(){
-	drawPuyo(myPuyoX,myPuyoY,puyoColors[primaryPuyoColor]);
-	drawPuyo(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),puyoColors[secondaryPuyoColor]);
 }
 // Can take negative values
 uint8_t isOnTopOfAnything(int8_t _x, int8_t _y){
@@ -651,7 +681,37 @@ int8_t popPuyos(uint8_t* _currentCombo){
 	}
 	return 0;
 }
-
+void savePlayerData(){
+	ti_var_t myAppVar;
+	uint8_t _tempFileFormatVersion;
+	myAppVar = ti_Open(SAVEFILENAME, "w");
+	if (myAppVar==0){
+		return;
+	}
+	_tempFileFormatVersion = SAVEFILEVERSION;
+	ti_Write(&_tempFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	ti_Write(&highscore,sizeof(uint32_t),1,myAppVar);
+	ti_Write(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
+	ti_CloseAll();
+}
+void loadPlayerData(){
+	ti_var_t myAppVar;
+	uint8_t _tempReadFileFormatVersion;
+	myAppVar = ti_Open(SAVEFILENAME, "r");
+	if (myAppVar==0){
+		highscore=0;
+		highestEverCombo=0;
+		return;
+	}
+	ti_Read(&_tempReadFileFormatVersion,sizeof(uint8_t),1,myAppVar);
+	if (_tempReadFileFormatVersion>SAVEFILEVERSION){ // Savefile is valid
+		drawErrorCircle();
+	}else{ // Savefile may be valid
+		ti_Read(&highscore,sizeof(uint32_t),1,myAppVar);
+		ti_Read(&highestEverCombo,sizeof(uint8_t),1,myAppVar);
+	}
+	ti_CloseAll();
+}
 // Lock puyo into place and do combos
 void lockPuyos(){
 	uint8_t _currentCombo=0;
@@ -663,6 +723,11 @@ void lockPuyos(){
 		_fallAndWritePuyoData(getSecondaryPuyoX(myPuyoX,secondaryPuyoOrientation),getSecondaryPuyoY(myPuyoY,secondaryPuyoOrientation),secondaryPuyoColor);
 	}	
 	while (popPuyos(&_currentCombo)==1);
+	if (_currentCombo>highestEverCombo){
+		highestEverCombo=_currentCombo;
+		savePlayerData();
+		redrawAllInfo();
+	}
 }
 
 char playerIsDead(){
@@ -671,24 +736,60 @@ char playerIsDead(){
 	}
 	return 0;
 }
-void writeScore(char* _appvarName, uint32_t _value){
-	ti_var_t myAppVar;
-	myAppVar = ti_Open(_appvarName, "w");
-	if (myAppVar==0){
-		return;
-	}
-	ti_Write(&_value,sizeof(uint32_t),1,myAppVar);
-	ti_CloseAll();
+
+void optionsMenu(){
+	
 }
-void loadScore(char* _appvarName, uint32_t* _value){
-	ti_var_t myAppVar;
-	myAppVar = ti_Open(_appvarName, "r");
-	if (myAppVar==0){
-		*_value=0;
-		return;
+
+// Return 1 to quit
+char titleScreen(){
+	uint16_t _drawStart = centerGeneric(8*5,SCREEN_HEIGHT);
+	uint8_t _totalMenuOptions=3;
+	char* _menuOptions[] = {"Play","Options","Not Play"};
+	uint8_t i;
+	uint8_t _choice=0;
+	gfx_FillScreen(BACKGROUND_COLOR);
+	gfx_PrintStringXY("Puyo Puyo 84",centerStringWidth("Puyo Puyo 84",SCREEN_WIDTH),_drawStart);
+	for (i=1;i<_totalMenuOptions;i++){
+		gfx_PrintStringXY(_menuOptions[i],centerStringWidth(_menuOptions[i],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(i+2));
 	}
-	ti_Read(_value,sizeof(uint32_t),1,myAppVar);
-	ti_CloseAll();
+	gfx_SetTextFGColor(COLOR_WHITE);
+	gfx_PrintStringXY(_menuOptions[0],centerStringWidth(_menuOptions[0],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(0+2));
+	while(1){
+		controlsStart();
+		if (upButtonPressed() || downButtonPressed()){
+			gfx_SetTextFGColor(COLOR_GREEN);
+			gfx_PrintStringXY(_menuOptions[_choice],centerStringWidth(_menuOptions[_choice],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(_choice+2));
+			if (downButtonPressed()){
+				if (_choice==_totalMenuOptions-1){
+					_choice=0;
+				}else{
+					_choice+=1;
+				}
+			}else if (upButtonPressed()){
+				if (_choice==0){
+					_choice = _totalMenuOptions-1;
+				}else{
+					_choice-=1;
+				}
+			}
+			gfx_SetTextFGColor(COLOR_WHITE);
+			gfx_PrintStringXY(_menuOptions[_choice],centerStringWidth(_menuOptions[_choice],SCREEN_WIDTH),_drawStart+FONT_HEIGHT*(_choice+2));
+		}
+		if (quitButtonPressed()){
+			return 1;
+		}
+		if (clockwiseButtonPressed()){
+			if (_choice==0){
+				return 0;
+			}else if (_choice==1){
+
+			}else if (_choice==2){
+				return 1;
+			}
+		}
+	}
+	return 0;
 }
 
 //////////////////////////////////////////////////////////
@@ -752,10 +853,7 @@ void initPuyo84(){
 	// Close files that were already open.
 	ti_CloseAll();
 	// Should probably be after the file closing
-	loadScore("NPUYOHI",&highscore);
-
-	// Start main game
-	redrawEverything();
+	loadPlayerData();
 
 	//////////////////////////////////////////////////////////////////
 
@@ -802,7 +900,14 @@ void main(void) {
 
 	initPuyo84();
 
-	drawBothPuyos();
+	if (titleScreen()){
+		gfx_End();
+		return;
+	}
+	gfx_SetTextFGColor(COLOR_GREEN);
+
+	// Start main game
+	redrawEverything();
 	while (gameIsRunning){
 		for (i=0;i<PUYO_DROP_SPEED;++i){
 			controlsStart();
@@ -843,7 +948,7 @@ void main(void) {
 				goodChangeColor(COLOR_BLACK);
 				gfx_FillRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT);
 				
-				gfx_PrintStringXY(PAUSEDSTRING, (SCREEN_WIDTH-gfx_GetStringWidth(PAUSEDSTRING))/2, (SCREEN_HEIGHT-FONT_HEIGHT)/2); // 8 is default font height?
+				gfx_PrintStringXY(PAUSEDSTRING, centerStringWidth(PAUSEDSTRING,SCREEN_WIDTH), centerGeneric(FONT_HEIGHT,SCREEN_HEIGHT));
 				while(1){
 					controlsStart();
 					if (pauseButtonPressed()){
@@ -857,7 +962,7 @@ void main(void) {
 				}
 				redrawEverything();
 			}
-			if (downButtonPressed()){
+			if (downButtonHeld()){
 				delay(HOLD_DOWN_DELAY);
 				break;
 			}
@@ -871,7 +976,8 @@ void main(void) {
 				if (playerIsDead()){
 					if (currentScore>highscore){
 						controlsStart();
-						writeScore("NPUYOHI",currentScore);
+						highscore=currentScore;
+						savePlayerData();
 						for (;!quitButtonPressed();i=!i){
 							controlsStart();
 							goodChangeColor(BACKGROUND_COLOR);
