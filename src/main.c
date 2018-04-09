@@ -41,6 +41,9 @@
 // Define
 //////////////////////////////////////////////////////////
 
+// Set to 1 before compiling
+#define IS_NORMAL_CONTROLS 1
+
 // X pixels between the label and its value
 #define INFO_INDENTATION 5
 // Distance between the board and the info
@@ -147,7 +150,7 @@
 
 // Keyboard data:
 //http://ce-programming.github.io/toolchain/keypadc_8h.html#a8cea914fc7256292713f6cd915e111ac
-#if 0 // Normal controls
+#if IS_NORMAL_CONTROLS // Normal controls
 	#define CONDITION_CLOCKWISE_BUTTON wasJustPressed(1,kb_Mode)
 	#define CONDITION_COUNTERCLOCKWISE_BUTTON wasJustPressed(1,kb_2nd)
 #else // Emulator controls
