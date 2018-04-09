@@ -41,6 +41,8 @@
 // Define
 //////////////////////////////////////////////////////////
 
+#define VERSIONSTRING "v1.1"
+
 // Set to 1 before compiling
 #define IS_NORMAL_CONTROLS 1
 
@@ -833,6 +835,22 @@ void saveGame(){
 
 /////////////////////////////////////////////////
 
+void creditsScreen(){
+	gfx_SetTextFGColor(COLOR_GREEN);
+	gfx_PrintStringXY(VERSIONSTRING,0,0);
+	gfx_PrintStringXY("Programming by MyLegGuy",0,FONT_HEIGHT*2);
+	gfx_PrintStringXY("Amitie graphic by SEGA",0,FONT_HEIGHT*3);
+	gfx_PrintStringXY("Puyo Puyo owned by SEGA",0,FONT_HEIGHT*4);
+	gfx_PrintStringXY("Please don't delete my game, SEGA",0,FONT_HEIGHT*5);
+	gfx_PrintStringXY("Press \"clear\" to go back",0,FONT_HEIGHT*7);
+	while (1){
+		controlsStart();
+		if (quitButtonPressed()){
+			break;
+		}
+	}
+}
+
 uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOptions, uint8_t _startingChoice){
 	uint16_t _drawStart = centerGeneric(8*(_totalMenuOptions+2),SCREEN_HEIGHT);
 	uint8_t i;
@@ -876,21 +894,21 @@ uint8_t genericMenu(char* _menuName, char** _menuOptions, uint8_t _totalMenuOpti
 uint8_t optionsMenu(){
 	uint8_t _chosenMenuOption=0;
 	while (1){
-		char* _menuOptions[]={"Back",NULL,"Delete High","Delete Temp Save"};
+		char* _menuOptions[]={"Back",NULL,"Delete High","Delete Temp Save","Credits"};
 		_menuOptions[1] = malloc(strlen("NOT AMITIE")+1);
 		if (doDrawWaifu){
 			strcpy(_menuOptions[1],"Amitie");
 		}else{
 			strcpy(_menuOptions[1],"NOT Amitie");
 		}
-		_chosenMenuOption = genericMenu("Options",&(_menuOptions[0]),4,_chosenMenuOption);
+		_chosenMenuOption = genericMenu("Options",&(_menuOptions[0]),5,_chosenMenuOption);
 		free(_menuOptions[1]);
 		if (_chosenMenuOption==0){
 			return 0;
 		}else if (_chosenMenuOption==1){
 			doDrawWaifu=!doDrawWaifu;
 		}else if (_chosenMenuOption==2){
-			if (yesOrNo("Really delete high scores and settings?",0)){
+			if (yesOrNo("Really delete highscore?",0)){
 				ti_Delete(SAVEOPTIONSNAME);
 				ti_CloseAll();
 				return 1;
@@ -901,6 +919,8 @@ uint8_t optionsMenu(){
 				ti_CloseAll();
 				return 1;
 			}
+		}else if (_chosenMenuOption==4){
+			creditsScreen();
 		}
 	}
 }
